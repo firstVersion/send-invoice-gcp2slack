@@ -1,0 +1,8 @@
+gcloud beta functions deploy notifySlack \
+--set-env-vars=\
+"SLACK_API_TOKEN"="your-api-token",\
+"SLACK_CHANNEL_NAME"="your-channel-name",\
+"TABLE_NAME"="your-project-name.your-db-name.your-table-name" \
+"FULL_BURST"="0 or 1" \
+--project=your-project-name \
+--trigger-http
