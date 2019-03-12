@@ -21,31 +21,51 @@ exports.notifySlack = (request, response) => {
 < ${date.min_day} - ${date.max_day} > Invoice ${date.invoice_month.substr(0,4)}/${date.invoice_month.substr(4,2)}`;
     let today_cost = 0;
     let total_today_cost = 0;
-    Object.keys(billing_data[0]).forEach(pj_name=>{
-     //プロジェクトに依存しない請求はproject.idがnullになる
-     today_cost = 0;
-     if(billing_data[1][pj_name]) billing_data[1][pj_name].forEach( v => today_cost+=v.cost );
-     total_today_cost += today_cost;
-     msg += createMessageRow(pj_name == "null"?"Support":pj_name, billing_data[0][pj_name][0].cost)
-     msg += " ("+spacer(`${Math.round(today_cost*100)/100}↑`,9,true)+")";
-     sum += Number(billing_data[0][pj_name][0].cost);
-   });
-   msg += "\n―――――――――――――――――――――――――――";
-   msg += createMessageRow("Sum",sum);
-   msg += " ("+spacer(`${Math.round(total_today_cost*100)/100}↑`,9,true)+")";
-   msg += "\n\n";
-   if( fullBurst == 1 )
-   Object.keys(billing_data[1]).forEach( pj_name=>{
-     msg += `\n\n< ${billing_data[1][pj_name][0].ex_day} 0:00-24:00 > ${pj_name}`;
-     billing_data[1][pj_name].forEach((v,i)=>{
-       diff = v.diff_cost > 0 ? `${v.diff_cost}`+"↑" : `${-1*v.diff_cost}`+"↓";
-       diff = spacer(diff, 9, true);
-       msg += createMessageRow(v.service_description,v.cost)+` (${diff})`
+    let month_cost = 0;
+    Object.keys(billing_data[0]).forEach( pj_name=>{
+       //プロジェクトに依存しない請求はproject.idがnullになる
+       // sum 1 day billing
+       today_cost = 0;
+       if(billing_data[1][pj_name]) billing_data[1][pj_name].forEach( v => today_cost+=v.cost );
+       total_today_cost += today_cost;
+       // sum month billing
+       month_cost = 0;
+       if(billing_data[0][pj_name]) billing_data[0][pj_name].forEach( v => month_cost+=v.cost );
+
+       msg += createMessageRow(pj_name == "null"?"Support":pj_name, month_cost)
+       msg += " ("+spacer(`${Math.round(today_cost*100)/100}↑`,9,true)+")";
+       sum += Number(month_cost);
      });
+     msg += "\n―――――――――――――――――――――――――――";
+     msg += createMessageRow("Sum",sum);
+     msg += " ("+spacer(`${Math.round(total_today_cost*100)/100}↑`,9,true)+")";
      msg += "\n\n";
-   });
-   return msg+"\n```";
+     if( fullBurst == 1 )
+     Object.keys(billing_data[0]).forEach( pj_name=>{
+       msg += `\n\n< ${billing_data[0][pj_name][0].ex_day} 0:00-24:00 > ${pj_name}`;
+       billing_data[0][pj_name].forEach((v,i)=>{
+         if(  Object.keys(billing_data[1]).indexOf(pj_name)>=0 && (d = findDupDescription( billing_data[1][pj_name], v.service_description )) )
+          {
+             diff = d.diff_cost > 0 ? `${d.diff_cost}`+"↑" : (d.diff_cost == 0 ? `0`+"→" : `${-1*d.diff_cost}`+"↓");
+             diff = spacer(diff, 9, true);
+             cost = spacer(`${Math.ceil(Number(d.cost))}↑`, 9, true);
+             msg += createMessageRow(v.service_description,v.cost)+` (${cost})`+` (${diff})`
+          }
+          else
+             msg += createMessageRow(v.service_description,v.cost)+` (${spacer("0→",9,true)})`+` (${spacer("0→",9,true)})`;
+       });
+       msg += "\n\n";
+     });
+     return msg+"\n```";
  }
+
+ const findDupDescription = function( descriptions, description ) {
+   var d = undefined;
+   descriptions.forEach(v=>{
+     if (v.service_description == description) d = v;
+   });
+  return d;
+ };
 
  //slackにテキストを送信する
  const sendMessage = function( token, ch_name, msg ) {
@@ -77,7 +97,7 @@ exports.notifySlack = (request, response) => {
 
  //概要と価格を良しなにつなげてくれる
  const createMessageRow = function(description, cost){
-   d = spacer(description, 20, false);
+   d = spacer(description, 22, false);
    c = spacer(`${Math.ceil(cost)}円`,9,true);
    return `\n${d}|${c}`;
  }
@@ -123,9 +143,13 @@ exports.notifySlack = (request, response) => {
  // 今日の請求額と一緒に前日の差額をとってくる
  const sql_today = {
    query: "\
-   SELECT T.pj_name, T.sdict AS service_description, T.cost AS cost, ROUND(T.cost-Y.cost,3) AS diff_cost, T.ex_day\
-    FROM\
-     (SELECT project.id AS pj_name, service.description AS sdict, SUM(cost) AS cost, FORMAT_DATE('%m/%d',DATE_SUB(CURRENT_DATE() ,INTERVAL 1 DAY)) AS ex_day\
+   SELECT\
+    T.pj_name,\
+    T.sdict AS service_description,\
+    T.cost AS cost,\
+    ROUND(T.cost-Y.cost,3) AS diff_cost\
+   FROM\
+     (SELECT project.id AS pj_name, service.description AS sdict, SUM(cost) AS cost\
      FROM `"+tableName+"`\
      WHERE FORMAT_DATE('%Y-%m-%d',DATE_SUB(CURRENT_DATE() ,INTERVAL 1 DAY)) = FORMAT_DATE('%Y-%m-%d', DATE(export_time)) \
      GROUP BY project.id, service.description\
@@ -143,12 +167,20 @@ exports.notifySlack = (request, response) => {
 //今月請求分の合計をとってくる
  const sql_month = {
    query: "\
-   SELECT project.id AS pj_name, CEIL(SUM(cost)) AS cost, FORMAT_DATE('%m/%d',MIN(DATE(export_time))) AS min_day, FORMAT_DATE('%m/%d',MAX(DATE(export_time))) AS max_day, MAX(invoice.month) AS invoice_month\
+   SELECT\
+    project.id AS pj_name,\
+    service.description AS service_description,\
+    CEIL(SUM(cost)) AS cost,\
+    FORMAT_DATE('%m/%d',\
+    MIN(DATE(export_time))) AS min_day,\
+    FORMAT_DATE('%m/%d',MAX(DATE(export_time))) AS max_day,\
+    MAX(invoice.month) AS invoice_month,\
+    FORMAT_DATE('%m/%d',DATE_SUB(CURRENT_DATE() ,INTERVAL 1 DAY)) AS ex_day\
    FROM  `"+tableName+"`\
    WHERE cost > 0\
    AND invoice.month=(SELECT MAX(invoice.month) FROM `"+tableName+"`)\
-   GROUP BY project.id\
-   ORDER BY project.id\
+   GROUP BY project.id, service.description\
+   ORDER BY project.id, service.description\
    LIMIT 50"};
 
 let today = new Promise((res,rej)=>bq.query(sql_today).then(results => res(results[0])));
