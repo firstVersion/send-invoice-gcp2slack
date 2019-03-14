@@ -10,7 +10,7 @@ exports.notifySlack = (request, response) => {
   const   slackChannelName = process.env.SLACK_CHANNEL_NAME;
   const   tableName = process.env.TABLE_NAME;
   const   option = parseInt(""+process.env.INVOICE_MONTH+process.env.INVOICE_DAY+process.env.DIFF_PERDAY+process.env.DIFF_INCREASE_AMOUNT_YESTERDAY,2);
-  //slack用テキスト生成
+　//slack用テキスト生成
   const createMessage = function( billing_data, date ) {
    let msg = "```";
    let description = "";
@@ -26,14 +26,20 @@ exports.notifySlack = (request, response) => {
        //プロジェクトに依存しない請求はproject.idがnullになる
        // sum 1 day billing
        today_cost = 0;
-       if(billing_data[1][pj_name]) billing_data[1][pj_name].forEach( v => today_cost+=v.cost );
+       diff_cost = 0;
+       if(billing_data[1][pj_name]) billing_data[1][pj_name].forEach( v => {today_cost+=v.cost; diff_cost+=v.diff_cost;} );
+
        total_today_cost += today_cost;
        // sum month billing
        month_cost = 0;
        if(billing_data[0][pj_name]) billing_data[0][pj_name].forEach( v => month_cost+=v.cost );
+       diff_cost = Math.round(diff_cost * 1000) / 1000;
+       diff = diff_cost > 0 ? `${diff_cost}`+"↑" : (diff_cost == 0 ? `0`+"→" : `${-1*diff_cost}`+"↓");
+       diff = spacer(diff, 9, true);
 
        msg += createMessageRow(pj_name == "null"?"Support":pj_name, month_cost)
        msg += " ("+spacer(`${Math.round(today_cost*100)/100}↑`,9,true)+")";
+       msg += ` (${diff})`
        sum += Number(month_cost);
      });
      msg += "\n―――――――――――――――――――――――――――";
@@ -42,7 +48,7 @@ exports.notifySlack = (request, response) => {
      msg += "\n\n";
      if( fullBurst == 1 )
      Object.keys(billing_data[0]).forEach( pj_name=>{
-       msg += `\n\n< ${billing_data[0][pj_name][0].ex_day} 0:00-24:00 > ${pj_name}`;
+       msg += `\n\n< ${billing_data[0][pj_name][0].ex_day} 0:00-24:00 > ${pj_name == "null"?"Support":pj_name}`;
        billing_data[0][pj_name].forEach((v,i)=>{
          if(  Object.keys(billing_data[1]).indexOf(pj_name)>=0 && (d = findDupDescription( billing_data[1][pj_name], v.service_description )) )
           {
@@ -182,16 +188,14 @@ exports.notifySlack = (request, response) => {
    GROUP BY project.id, service.description\
    ORDER BY project.id, service.description\
    LIMIT 50"};
-if(option&parseInt("1100",2) > 0)
-{
-  let today = new Promise((res,rej)=>bq.query(sql_today).then(results => res(results[0])));
-  let month = new Promise((res,rej)=>bq.query(sql_month).then(results => res(results[0])));
-  Promise.all([month,today]).then(values=>{
-    let rvalues = reshapeData(values);
-    let minmaxday = getMinMaxDay(values[0]);
-    let message = createMessage(rvalues,minmaxday);
-    sendMessage(slackAPIToken, slackChannelName, message);
-  });
-}
+
+let today = new Promise((res,rej)=>bq.query(sql_today).then(results => res(results[0])));
+let month = new Promise((res,rej)=>bq.query(sql_month).then(results => res(results[0])));
+Promise.all([month,today]).then(values=>{
+  let rvalues = reshapeData(values);
+  let minmaxday = getMinMaxDay(values[0]);
+  let message = createMessage(rvalues,minmaxday);
+  sendMessage(slackAPIToken, slackChannelName, message);
+});
 response.status(200).end();
 }
