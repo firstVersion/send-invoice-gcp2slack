@@ -22,31 +22,35 @@ exports.notifySlack = (request, response) => {
     let today_cost = 0;
     let total_today_cost = 0;
     let month_cost = 0;
-    Object.keys(billing_data[0]).forEach( pj_name=>{
+    if((option&parseInt("1000",2))>0) {
+      Object.keys(billing_data[0]).forEach( pj_name=>{
        //プロジェクトに依存しない請求はproject.idがnullになる
        // sum 1 day billing
-       today_cost = 0;
-       diff_cost = 0;
-       if(billing_data[1][pj_name]) billing_data[1][pj_name].forEach( v => {today_cost+=v.cost; diff_cost+=v.diff_cost;} );
 
-       total_today_cost += today_cost;
-       // sum month billing
-       month_cost = 0;
-       if(billing_data[0][pj_name]) billing_data[0][pj_name].forEach( v => month_cost+=v.cost );
-       diff_cost = Math.round(diff_cost * 1000) / 1000;
-       diff = diff_cost > 0 ? `${diff_cost}`+"↑" : (diff_cost == 0 ? `0`+"→" : `${-1*diff_cost}`+"↓");
-       diff = spacer(diff, 9, true);
+         today_cost = 0;
+         diff_cost = 0;
+         if(billing_data[1][pj_name]) billing_data[1][pj_name].forEach( v => {today_cost+=v.cost; diff_cost+=v.diff_cost;} );
 
-       msg += createMessageRow(pj_name == "null"?"Support":pj_name, month_cost)
-       msg += " ("+spacer(`${Math.round(today_cost*100)/100}↑`,9,true)+")";
-       msg += ` (${diff})`
-       sum += Number(month_cost);
-     });
-     msg += "\n―――――――――――――――――――――――――――";
-     msg += createMessageRow("Sum",sum);
-     msg += " ("+spacer(`${Math.round(total_today_cost*100)/100}↑`,9,true)+")";
-     msg += "\n\n";
-     if( fullBurst == 1 )
+         total_today_cost += today_cost;
+         // sum month billing
+         month_cost = 0;
+         if(billing_data[0][pj_name]) billing_data[0][pj_name].forEach( v => month_cost+=v.cost );
+         diff_cost = Math.round(diff_cost * 100) / 100;
+         diff = diff_cost > 0 ? `${diff_cost}`+"↑" : (diff_cost == 0 ? `0`+"→" : `${-1*diff_cost}`+"↓");
+         diff = spacer(diff, 9, true);
+
+         msg += createMessageRow(pj_name == "null"?"Support":pj_name, month_cost)
+         if((option&parseInt("0010",2))>0) msg += " ("+spacer(`${Math.round(today_cost*100)/100}↑`,9,true)+")";
+         if((option&parseInt("0001",2))>0) msg += ` (${diff})`
+         sum += Number(month_cost);
+       });
+       msg += "\n―――――――――――――――――――――――――――";
+       msg += createMessageRow("Sum",sum);
+       msg += " ("+spacer(`${Math.round(total_today_cost*100)/100}↑`,9,true)+")";
+       msg += "\n\n";
+     }
+     // breakdown
+     if( (option&parseInt("0100",2))>0 )
      Object.keys(billing_data[0]).forEach( pj_name=>{
        msg += `\n\n< ${billing_data[0][pj_name][0].ex_day} 0:00-24:00 > ${pj_name == "null"?"Support":pj_name}`;
        billing_data[0][pj_name].forEach((v,i)=>{
@@ -55,10 +59,16 @@ exports.notifySlack = (request, response) => {
              diff = d.diff_cost > 0 ? `${d.diff_cost}`+"↑" : (d.diff_cost == 0 ? `0`+"→" : `${-1*d.diff_cost}`+"↓");
              diff = spacer(diff, 9, true);
              cost = spacer(`${Math.ceil(Number(d.cost))}↑`, 9, true);
-             msg += createMessageRow(v.service_description,v.cost)+` (${cost})`+` (${diff})`
+             msg += createMessageRow(v.service_description,v.cost);
+             if((option&parseInt("0010",2))>0) msg += ` (${cost})`;
+             if((option&parseInt("0001",2))>0) msg += ` (${diff})`;
           }
           else
-             msg += createMessageRow(v.service_description,v.cost)+` (${spacer("0→",9,true)})`+` (${spacer("0→",9,true)})`;
+          {
+            msg += createMessageRow(v.service_description,v.cost)
+            if((option&parseInt("0010",2))>0) msg +=` (${spacer("0→",9,true)})`;
+            if((option&parseInt("0001",2))>0) msg +=` (${spacer("0→",9,true)})`;
+          }
        });
        msg += "\n\n";
      });
@@ -188,14 +198,16 @@ exports.notifySlack = (request, response) => {
    GROUP BY project.id, service.description\
    ORDER BY project.id, service.description\
    LIMIT 50"};
-
-let today = new Promise((res,rej)=>bq.query(sql_today).then(results => res(results[0])));
-let month = new Promise((res,rej)=>bq.query(sql_month).then(results => res(results[0])));
-Promise.all([month,today]).then(values=>{
-  let rvalues = reshapeData(values);
-  let minmaxday = getMinMaxDay(values[0]);
-  let message = createMessage(rvalues,minmaxday);
-  sendMessage(slackAPIToken, slackChannelName, message);
-});
+if((option&parseInt("1100",2))>0)
+{
+  let today = new Promise((res,rej)=>bq.query(sql_today).then(results => res(results[0])));
+  let month = new Promise((res,rej)=>bq.query(sql_month).then(results => res(results[0])));
+  Promise.all([month,today]).then(values=>{
+    let rvalues = reshapeData(values);
+    let minmaxday = getMinMaxDay(values[0]);
+    let message = createMessage(rvalues,minmaxday);
+    sendMessage(slackAPIToken, slackChannelName, message);
+  });
+}
 response.status(200).end();
 }
