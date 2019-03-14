@@ -9,7 +9,7 @@ exports.notifySlack = (request, response) => {
   const   slackAPIToken = process.env.SLACK_API_TOKEN;
   const   slackChannelName = process.env.SLACK_CHANNEL_NAME;
   const   tableName = process.env.TABLE_NAME;
-  const   fullBurst = process.env.FULL_BURST;
+  const   option = parseInt(""+process.env.INVOICE_MONTH+process.env.INVOICE_DAY+process.env.DIFF_PERDAY+process.env.DIFF_INCREASE_AMOUNT_YESTERDAY,2);
   //slack用テキスト生成
   const createMessage = function( billing_data, date ) {
    let msg = "```";
@@ -182,14 +182,16 @@ exports.notifySlack = (request, response) => {
    GROUP BY project.id, service.description\
    ORDER BY project.id, service.description\
    LIMIT 50"};
-
-let today = new Promise((res,rej)=>bq.query(sql_today).then(results => res(results[0])));
-let month = new Promise((res,rej)=>bq.query(sql_month).then(results => res(results[0])));
-Promise.all([month,today]).then(values=>{
-  let rvalues = reshapeData(values);
-  let minmaxday = getMinMaxDay(values[0]);
-  let message = createMessage(rvalues,minmaxday);
-  sendMessage(slackAPIToken, slackChannelName, message);
-});
+if(option&parseInt("1100",2) > 0)
+{
+  let today = new Promise((res,rej)=>bq.query(sql_today).then(results => res(results[0])));
+  let month = new Promise((res,rej)=>bq.query(sql_month).then(results => res(results[0])));
+  Promise.all([month,today]).then(values=>{
+    let rvalues = reshapeData(values);
+    let minmaxday = getMinMaxDay(values[0]);
+    let message = createMessage(rvalues,minmaxday);
+    sendMessage(slackAPIToken, slackChannelName, message);
+  });
+}
 response.status(200).end();
 }
