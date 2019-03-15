@@ -1,8 +1,23 @@
-gcloud beta functions deploy notifySlack \
+PROJECT_NAME="hogehoge"
+FUNCTION_NAME="notifySlack"
+SLACK_API_TOKEN="xoxp-"
+SLACK_CHANNEL_NAME="general"
+TABLE_NAME=""
+INVOICE_MONTH="1"
+INVOICE_DAY="1"
+DIFF_PERDAY="1"
+DIFF_INCREASE_AMOUNT_YESTERDAY="0"
+
+cd `dirname $0`
+sed -ri "s/exports\..+ = \(/exports\.${FUNCTION_NAME} = \(/g" index.js;
+gcloud beta functions deploy $FUNCTION_NAME \
 --set-env-vars=\
-"SLACK_API_TOKEN"="your-api-token",\
-"SLACK_CHANNEL_NAME"="your-channel-name",\
-"TABLE_NAME"="your-project-name.your-db-name.your-table-name" \
-"FULL_BURST"="0 or 1" \
---project=your-project-name \
+"SLACK_API_TOKEN"="${SLACK_API_TOKEN}",\
+"SLACK_CHANNEL_NAME"="${SLACK_CHANNEL_NAME}",\
+"TABLE_NAME"="${TABLE_NAME}",\
+"INVOICE_MONTH"="${INVOICE_MONTH}",\
+"INVOICE_DAY"="${INVOICE_DAY}",\
+"DIFF_PERDAY"="${DIFF_PERDAY}",\
+"DIFF_INCREASE_AMOUNT_YESTERDAY"="${DIFF_INCREASE_AMOUNT_YESTERDAY}",\
+--project=$PROJECT_NAME \
 --trigger-http

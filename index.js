@@ -12,13 +12,17 @@ exports.notifySlack = (request, response) => {
   const   option = parseInt(""+process.env.INVOICE_MONTH+process.env.INVOICE_DAY+process.env.DIFF_PERDAY+process.env.DIFF_INCREASE_AMOUNT_YESTERDAY,2);
 　//slack用テキスト生成
   const createMessage = function( billing_data, date ) {
-   let msg = "```";
+   let msgs = [""];
+   let msg = "";
    let description = "";
    let cost = "";
    let diff = "";
    let sum = 0;
-   msg += `\n\
-< ${date.min_day} - ${date.max_day} > Invoice ${date.invoice_month.substr(0,4)}/${date.invoice_month.substr(4,2)}`;
+
+   msg += `\n`;
+   msg += `< ${date.min_day} - ${date.max_day} > Invoice ${date.invoice_month.substr(0,4)}/${date.invoice_month.substr(4,2)}`;
+   if((option&parseInt("0010",2))>0) msg += ` ( ${date.max_day} 00:00-24:00 )`;
+   if((option&parseInt("0001",2))>0) msg += ` ( ${date.max_day} 前日費差分 )`;
     let today_cost = 0;
     let total_today_cost = 0;
     let month_cost = 0;
@@ -37,28 +41,34 @@ exports.notifySlack = (request, response) => {
          if(billing_data[0][pj_name]) billing_data[0][pj_name].forEach( v => month_cost+=v.cost );
          diff_cost = Math.round(diff_cost * 100) / 100;
          diff = diff_cost > 0 ? `${diff_cost}`+"↑" : (diff_cost == 0 ? `0`+"→" : `${-1*diff_cost}`+"↓");
-         diff = spacer(diff, 9, true);
+         diff = spacer(diff, 10,true);
 
-         msg += createMessageRow(pj_name == "null"?"Support":pj_name, month_cost)
-         if((option&parseInt("0010",2))>0) msg += " ("+spacer(`${Math.round(today_cost*100)/100}↑`,9,true)+")";
-         if((option&parseInt("0001",2))>0) msg += ` (${diff})`
+         msg += createMessageRow(pj_name == "null"?"Support":pj_name, month_cost);
+         if((option&parseInt("0010",2))>0) msg += " ("+spacer(`${Math.round(today_cost)}↑`,10,true)+")";
+         if((option&parseInt("0001",2))>0) msg += ` (${diff})`;
          sum += Number(month_cost);
        });
        msg += "\n―――――――――――――――――――――――――――";
        msg += createMessageRow("Sum",sum);
-       msg += " ("+spacer(`${Math.round(total_today_cost*100)/100}↑`,9,true)+")";
+       msg += " ("+spacer(`${Math.round(total_today_cost*100)/100}↑`,10,true)+")";
        msg += "\n\n";
      }
+     msgs = pushMsgs(msgs,msg);
+     msg = "";
      // breakdown
      if( (option&parseInt("0100",2))>0 )
      Object.keys(billing_data[0]).forEach( pj_name=>{
-       msg += `\n\n< ${billing_data[0][pj_name][0].ex_day} 0:00-24:00 > ${pj_name == "null"?"Support":pj_name}`;
+       msg += `< ${date.min_day} - ${date.max_day} > ${pj_name == "null"?"Support":pj_name}`;
+       msg += `\n${spacer(`service name`, 22, false)}|${spacer('this month', 11,true)}`;
+       if((option&parseInt("0010",2))>0)msg += ` (${spacer('one day', 10,true)})`;
+       if((option&parseInt("0001",2))>0)msg += ` (${spacer('diff day', 10,true)})`;
+       msg += `\n-----------------------------------------------`;
        billing_data[0][pj_name].forEach((v,i)=>{
          if(  Object.keys(billing_data[1]).indexOf(pj_name)>=0 && (d = findDupDescription( billing_data[1][pj_name], v.service_description )) )
           {
              diff = d.diff_cost > 0 ? `${d.diff_cost}`+"↑" : (d.diff_cost == 0 ? `0`+"→" : `${-1*d.diff_cost}`+"↓");
-             diff = spacer(diff, 9, true);
-             cost = spacer(`${Math.ceil(Number(d.cost))}↑`, 9, true);
+             diff = spacer(diff, 10,true);
+             cost = spacer(`${Math.ceil(Number(d.cost))}↑`, 10,true);
              msg += createMessageRow(v.service_description,v.cost);
              if((option&parseInt("0010",2))>0) msg += ` (${cost})`;
              if((option&parseInt("0001",2))>0) msg += ` (${diff})`;
@@ -66,13 +76,28 @@ exports.notifySlack = (request, response) => {
           else
           {
             msg += createMessageRow(v.service_description,v.cost)
-            if((option&parseInt("0010",2))>0) msg +=` (${spacer("0→",9,true)})`;
-            if((option&parseInt("0001",2))>0) msg +=` (${spacer("0→",9,true)})`;
+            if((option&parseInt("0010",2))>0) msg +=` (${spacer("0→",10,true)})`;
+            if((option&parseInt("0001",2))>0) msg +=` (${spacer("0→",10,true)})`;
           }
        });
        msg += "\n\n";
+       msgs = pushMsgs(msgs,msg);
+       msg = "";
      });
-     return msg+"\n```";
+     msgs[msgs.length-1] = "```\n"+msgs[msgs.length-1]+"\n```";
+     return msgs;
+}
+
+ const pushMsgs = function(msgs, msg) {
+   const max_msg_length = 4000;
+   if ( (msgs[msgs.length-1]+msg).length <= max_msg_length )
+    msgs[msgs.length-1] += msg;
+   else
+   {
+     msgs[msgs.length-1] = "```\n"+msgs[msgs.length-1]+"\n```";
+     msgs.push(msg);
+   }
+   return msgs;
  }
 
  const findDupDescription = function( descriptions, description ) {
@@ -114,7 +139,7 @@ exports.notifySlack = (request, response) => {
  //概要と価格を良しなにつなげてくれる
  const createMessageRow = function(description, cost){
    d = spacer(description, 22, false);
-   c = spacer(`${Math.ceil(cost)}円`,9,true);
+   c = spacer(`${Math.ceil(cost)}円`,10,true);
    return `\n${d}|${c}`;
  }
 
@@ -163,7 +188,7 @@ exports.notifySlack = (request, response) => {
     T.pj_name,\
     T.sdict AS service_description,\
     T.cost AS cost,\
-    ROUND(T.cost-Y.cost,3) AS diff_cost\
+    ROUND(T.cost-Y.cost,2) AS diff_cost\
    FROM\
      (SELECT project.id AS pj_name, service.description AS sdict, SUM(cost) AS cost\
      FROM `"+tableName+"`\
@@ -205,8 +230,8 @@ if((option&parseInt("1100",2))>0)
   Promise.all([month,today]).then(values=>{
     let rvalues = reshapeData(values);
     let minmaxday = getMinMaxDay(values[0]);
-    let message = createMessage(rvalues,minmaxday);
-    sendMessage(slackAPIToken, slackChannelName, message);
+    let res = createMessage(rvalues,minmaxday);
+    res.forEach(m=>sendMessage(slackAPIToken, slackChannelName, m));
   });
 }
 response.status(200).end();
