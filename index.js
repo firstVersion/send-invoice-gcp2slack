@@ -122,30 +122,32 @@ exports.notifySlack = (request, response) => {
 
  //slackにテキストを送信する
  const sendMessage = function( token, ch_name, msg ) {
-   let https       = require('https');
-   let querystring = require("querystring")
-   let data = querystring.stringify({
-     token:   token,
-     channel: ch_name,
-     text:    msg
-   });
-   let options = {
-     host:'slack.com',
-     port:443,
-     method:'POST',
-     path:'/api/chat.postMessage',
-     headers: {
-       'Content-Type': 'application/x-www-form-urlencoded',
-       'Content-Length': data.length
+   return new Promise(function(res,rej){
+     let https       = require('https');
+     let querystring = require("querystring")
+     let data = querystring.stringify({
+       token:   token,
+       channel: ch_name,
+       text:    msg
+     });
+     let options = {
+       host:'slack.com',
+       port:443,
+       method:'POST',
+       path:'/api/chat.postMessage',
+       headers: {
+         'Content-Type': 'application/x-www-form-urlencoded',
+         'Content-Length': data.length
+       }
      }
-   }
-   let req = https.request(options,res=>{
-     res.on('data', chunk=>{});
-     res.on('end',  ()=>{  });
-     res.on('error', err=>{ console.log(err); });
+     let req = https.request(options,r=>{
+       r.on('data', chunk=>{});
+       r.on('end',  ()=>{ res(); });
+       r.on('error', err=>{ console.log(err); rej(); });
+     });
+     req.write(data);
+     req.end();
    });
-   req.write(data);
-   req.end();
  }
 
  //概要と価格を良しなにつなげてくれる
@@ -189,6 +191,7 @@ exports.notifySlack = (request, response) => {
      });
      return { min_day:min_day, max_day:max_day, invoice_month:v[0].invoice_month };
  }
+
 
  //ここから実行
  const {BigQuery} = require('@google-cloud/bigquery');
@@ -243,7 +246,9 @@ if((option&parseInt("1100",2))>0)
     let rvalues = reshapeData(values);
     let minmaxday = getMinMaxDay(values[0]);
     let res = createMessage(rvalues,minmaxday);
-    res.forEach(m=>sendMessage(slackAPIToken, slackChannelName, m));
+    var funcArray = [];
+    res.forEach( m=> funcArray.push(()=>{return sendMessage(slackAPIToken,slackChannelName,m)}) );
+    funcArray.reduce((pv,cv)=>{return pv.then(cv);}, Promise.resolve());
   });
 }
 response.status(200).end();
