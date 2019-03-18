@@ -84,21 +84,33 @@ exports.notifySlack = (request, response) => {
        msgs = pushMsgs(msgs,msg);
        msg = "";
      });
-     msgs[msgs.length-1] = "```\n"+msgs[msgs.length-1]+"\n```";
+     msgs = decolateMsgs(fmtMsgs(msgs,date.max_day));
      return msgs;
 }
+
 
  const pushMsgs = function(msgs, msg) {
    const max_msg_length = 4000;
    if ( (msgs[msgs.length-1]+msg).length <= max_msg_length )
     msgs[msgs.length-1] += msg;
    else
-   {
-     msgs[msgs.length-1] = "```\n"+msgs[msgs.length-1]+"\n```";
-     msgs.push(msg);
-   }
+    msgs.push(msg);
    return msgs;
  }
+
+ const fmtMsgs = function(msgs,ex_day){
+   if(msgs.length == 1) return msgs;
+   const holizon_msg = (e,n,d)=>{return `${e} 投稿コメント (${n}/${d})\nSlack文字数の上限に達したことで投稿が分割されました。\n\n`};
+   msgs[0] = msgs[0]+`\n文字数が上限に達したので投稿を分割します\n${ex_day} 投稿コメント (1/${msgs.length})\n`;
+   msgs.forEach((v,i)=>{ if(i>0) msgs[i] = holizon_msg(ex_day,i+1,msgs.length)+v; });
+   return msgs;
+ }
+
+ const decolateMsgs = function(msgs){
+   msgs.forEach((m,i)=>{msgs[i]="```\n"+m+"\n```";});
+   return msgs;
+ }
+
 
  const findDupDescription = function( descriptions, description ) {
    var d = undefined;
